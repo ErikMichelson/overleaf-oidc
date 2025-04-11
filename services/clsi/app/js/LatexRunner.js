@@ -174,6 +174,10 @@ function _buildLatexCommand(mainFile, opts = {}) {
     '-time'
   )
 
+  if (process.env.OVERLEAF_ENABLE_SHELL_ESCAPE) {
+    command.push('-shell-escape')
+  }
+
   // Stop on first error option
   if (opts.stopOnFirstError) {
     command.push('-halt-on-error')
