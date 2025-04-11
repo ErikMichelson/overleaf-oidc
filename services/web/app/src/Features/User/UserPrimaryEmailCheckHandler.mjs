@@ -6,6 +6,11 @@ function requiresPrimaryEmailCheck({
   lastPrimaryEmailCheck,
   signUpDate,
 }) {
+  // we never require a check when using OIDC, as emails are retrieved from the OIDC provider
+  if (process.env.OVERLEAF_OIDC_ISSUER !== undefined) {
+    return false
+  }
+
   const hasExpired = date => {
     if (!date) {
       return true

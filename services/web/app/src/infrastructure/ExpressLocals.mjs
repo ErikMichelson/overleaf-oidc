@@ -186,6 +186,18 @@ export default async function (webRouter, privateApiRouter, publicApiRouter) {
       return staticFilesBase + path
     }
 
+    res.locals.local_login_enabled =
+      (process.env.OVERLEAF_ENABLE_LOCAL_LOGIN || 'true') === 'true'
+    res.locals.oidc_login_enabled =
+      process.env.OVERLEAF_OIDC_ISSUER !== undefined
+    res.locals.login_info_text =
+      process.env.OVERLEAF_LOGIN_INFO_TEXT ||
+      'Welcome to Overleaf! Log in to your account below.'
+    res.locals.oidc_login_button_text =
+      process.env.OVERLEAF_LOGIN_OIDC_BUTTON || 'Log in with SSO'
+    res.locals.oidc_login_in_navbar =
+      process.env.OVERLEAF_OIDC_LOGIN_IN_NAVBAR === 'true'
+
     next()
   })
 

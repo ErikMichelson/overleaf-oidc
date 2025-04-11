@@ -224,6 +224,7 @@ export const UserSchema = new Schema(
     awareOfV2: { type: Boolean, default: false },
     samlIdentifiers: { type: Array, default: [] },
     thirdPartyIdentifiers: { type: Array, default: [] },
+    oidcIdentifier: { type: String },
     migratedAt: { type: Date },
     twoFactorAuthentication: {
       createdAt: { type: Date },
