@@ -162,15 +162,26 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg(
 								) #{translate('sign_up')}
 
 						// login link
-						+nav-item
-							+nav-link(
-								href='/login'
-								event-tracking='menu-click'
-								event-tracking-action='clicked'
-								event-tracking-trigger='click'
-								event-tracking-mb='true'
-								event-segmentation={page: currentUrl, item: 'login', location: 'top-menu'}
-							) #{translate('log_in')}
+						if local_login_enabled
+							+nav-item
+								+nav-link(
+									href='/login'
+									event-tracking='menu-click'
+									event-tracking-action='clicked'
+									event-tracking-trigger='click'
+									event-tracking-mb='true'
+									event-segmentation={page: currentUrl, item: 'login', location: 'top-menu'}
+								) #{translate('log_in')}
+						if oidc_login_enabled && (oidc_login_in_navbar || !local_login_enabled)
+							+nav-item
+								+nav-link(
+									href='/login/oidc'
+									event-tracking='menu-click'
+									event-tracking-action='clicked'
+									event-tracking-trigger='click'
+									event-tracking-mb='true'
+									event-segmentation={page: currentUrl, item: 'login', location: 'top-menu'}
+								) #{oidc_login_button_text}
 
 					// projects link and account menu
 					if getSessionUser()
