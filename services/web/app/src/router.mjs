@@ -220,6 +220,15 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
   webRouter.get('/login', UserPagesController.loginPage)
   AuthenticationController.addEndpointToLoginWhitelist('/login')
 
+  webRouter.get('/login/oidc', AuthenticationController.oidcLogin)
+  AuthenticationController.addEndpointToLoginWhitelist('/login/oidc')
+
+  webRouter.get(
+    '/login/oidc/callback',
+    AuthenticationController.oidcLoginCallback
+  )
+  AuthenticationController.addEndpointToLoginWhitelist('/login/oidc/callback')
+
   webRouter.post(
     '/login',
     RateLimiterMiddleware.rateLimit(overleafLoginRateLimiter), // rate limit IP (20 / 60s)
@@ -268,8 +277,12 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   if (Features.hasFeature('registration-page')) {
     webRouter.get('/register', UserPagesController.registerPage)
-    AuthenticationController.addEndpointToLoginWhitelist('/register')
+  } else {
+    webRouter.get('/register', function (req, res, next) {
+      res.redirect('/login')
+    })
   }
+  AuthenticationController.addEndpointToLoginWhitelist('/register')
 
   EditorRouter.apply(webRouter, privateApiRouter)
   CollaboratorsRouter.apply(webRouter, privateApiRouter)

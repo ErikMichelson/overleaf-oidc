@@ -9,6 +9,8 @@ const querystring = require('querystring')
 const Settings = require('@overleaf/settings')
 const basicAuth = require('basic-auth')
 const tsscmp = require('tsscmp')
+const { User } = require('../../models/User')
+const UserCreator = require('../User/UserCreator')
 const UserHandler = require('../User/UserHandler')
 const UserSessionsManager = require('../User/UserSessionsManager')
 const Analytics = require('../Analytics/AnalyticsManager')
@@ -97,50 +99,70 @@ const AuthenticationController = {
     cb(null, user)
   },
 
+  createPassportCallback(method, req, res, next) {
+    return async function (err, user, info) {
+      if (err) {
+        return next(err)
+      }
+      if (!info) {
+        info = {}
+      }
+      if (user) {
+        // `user` is either a user object or false
+        AuthenticationController.setAuditInfo(req, {
+          method,
+        })
+
+        try {
+          // We could investigate whether this can be done together with 'preFinishLogin' instead of being its own hook
+          await Modules.promises.hooks.fire(
+            'saasLogin',
+            { email: user.email },
+            req
+          )
+          await AuthenticationController.promises.finishLogin(user, req, res)
+        } catch (err) {
+          return next(err)
+        }
+      } else {
+        if (info.redir != null) {
+          return res.json({ redir: info.redir })
+        } else {
+          res.status(info.status || 200)
+          delete info.status
+          const body = { message: info }
+          const { errorReason } = info
+          if (errorReason) {
+            body.errorReason = errorReason
+            delete info.errorReason
+          }
+          return res.json(body)
+        }
+      }
+    }
+  },
+
   passportLogin(req, res, next) {
     // This function is middleware which wraps the passport.authenticate middleware,
     // so we can send back our custom `{message: {text: "", type: ""}}` responses on failure,
     // and send a `{redir: ""}` response on success
+    if (process.env.OVERLEAF_ENABLE_LOCAL_LOGIN === 'false') {
+      return res.status(403).json({
+        message: {
+          type: 'error',
+          text: 'Local login is disabled',
+        },
+      })
+    }
     passport.authenticate(
       'local',
       { keepSessionInfo: true },
-      async function (err, user, info) {
-        if (err) {
-          return next(err)
-        }
-        if (user) {
-          // `user` is either a user object or false
-          AuthenticationController.setAuditInfo(req, {
-            method: 'Password login',
-          })
-
-          try {
-            // We could investigate whether this can be done together with 'preFinishLogin' instead of being its own hook
-            await Modules.promises.hooks.fire(
-              'saasLogin',
-              { email: user.email },
-              req
-            )
-            await AuthenticationController.promises.finishLogin(user, req, res)
-          } catch (err) {
-            return next(err)
-          }
-        } else {
-          if (info.redir != null) {
-            return res.json({ redir: info.redir })
-          } else {
-            res.status(info.status || 200)
-            delete info.status
-            const body = { message: info }
-            const { errorReason } = info
-            if (errorReason) {
-              body.errorReason = errorReason
-              delete info.errorReason
-            }
-            return res.json(body)
-          }
-        }
-      }
+      AuthenticationController.createPassportCallback(
+        'Password login',
+        req,
+        res,
+        next
+      )
     )(req, res, next)
   },
 
@@ -600,6 +622,106 @@ const AuthenticationController = {
     if (req.session != null) {
       delete req.session.postLoginRedirect
     }
+  },
+
+  extractOidcIdFromProfile(profile) {
+    const method = process.env.OVERLEAF_OIDC_MATCHING || 'id'
+    switch (method) {
+      case 'username':
+        return profile.username
+      case 'id':
+      default:
+        return profile.id
+    }
+  },
+
+  ensureOidcLoginEnabled(res) {
+    if (process.env.OVERLEAF_OIDC_ISSUER === undefined) {
+      res.status(403).json({
+        message: {
+          type: 'error',
+          text: 'OIDC login is disabled',
+        },
+      })
+      return false
+    }
+    return true
+  },
+
+  oidcLogin(req, res, next) {
+    if (!AuthenticationController.ensureOidcLoginEnabled(res)) {
+      return
+    }
+    return passport.authenticate('oidc')(req, res, next)
+  },
+
+  oidcLoginCallback(req, res, next) {
+    if (!AuthenticationController.ensureOidcLoginEnabled(res)) {
+      return
+    }
+    return passport.authenticate(
+      'oidc',
+      {
+        failureRedirect: '/login',
+        failureMessage: true,
+      },
+      AuthenticationController.createPassportCallback(
+        'OIDC login',
+        req,
+        res,
+        next
+      )
+    )(req, res, next)
+  },
+
+  verifyOpenIDConnect(issuer, profile, callback) {
+    User.findOne({
+      oidcIdentifier:
+        AuthenticationController.extractOidcIdFromProfile(profile),
+    })
+      .exec()
+      .then(user => {
+        if (!user) {
+          UserCreator.createNewUser(
+            {
+              holdingAccount: false,
+              email: profile.emails[0].value,
+              first_name: profile.name?.givenName || '',
+              last_name: profile.name?.familyName || profile.username,
+              oidcIdentifier:
+                AuthenticationController.extractOidcIdFromProfile(profile),
+            },
+            function (user) {
+              return callback(null, user)
+            }
+          )
+        } else {
+          user.first_name = profile.name?.givenName || ''
+          user.last_name = profile.name?.familyName || profile.username
+          if (user.email !== profile.emails[0].value) {
+            user.email = profile.emails[0].value
+            const reversedHostname = user.email
+              .split('@')[1]
+              .split('')
+              .reverse()
+              .join('')
+            const emailData = {
+              email: user.email,
+              createdAt: new Date(),
+              reversedHostname,
+            }
+            user.emails = [emailData]
+          }
+          user.save().then(() => {
+            return callback(null, user)
+          }).catch(error => {
+            return callback(error)
+          })
+        }
+      })
+      .catch(error => {
+        return callback(error)
+      })
   },
 }
 
